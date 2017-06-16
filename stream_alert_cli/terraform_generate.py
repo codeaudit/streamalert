@@ -129,24 +129,52 @@ def generate_main(**kwargs):
     return main_dict
 
 
-def generate_cluster(**kwargs):
-    config = kwargs.get('config')
-    cluster_name = kwargs.get('cluster_name')
+def generate_stream_alert(cluster_name, cluster_dict, config):
+    """Input from the config:
+
+    "stream_alert": {
+      "alert_processor": {
+        "current_version": "$LATEST",
+        "memory": 128,
+        "outputs": {
+          "aws-lambda": [
+            "lambda_function_name"
+          ],
+          "aws-s3": [
+            "s3.bucket.name"
+          ]
+        },
+        "timeout": 10,
+        "vpc_config": {
+          "security_group_ids": [
+            "sg-id"
+          ],
+          "subnet_ids": [
+            "subnet-id"
+          ]
+        }
+      },
+      "rule_processor": {
+        "current_version": "$LATEST",
+        "inputs": {
+          "aws-sns": [
+            "sns_topic_arn"
+          ]
+        },
+        "memory": 128,
+        "timeout": 10
+      }
+    }
+    """
     account = config['global']['account']
-    prefix = account['prefix']
-    logging_bucket = '{}.streamalert.s3-logging'.format(
-        config['global']['account']['prefix'])
-    account_id = account['aws_account_id']
-    firehose_suffix = config['clusters'][cluster_name]['modules']['kinesis']['firehose']['s3_bucket_suffix']
     modules = config['clusters'][cluster_name]['modules']
-    cluster_dict = infinitedict()
 
     # Main StreamAlert module
     cluster_dict['module']['stream_alert_{}'.format(cluster_name)] = {
         'source': 'modules/tf_stream_alert',
-        'account_id': account_id,
+        'account_id': account['aws_account_id'],
         'region': config['clusters'][cluster_name]['region'],
-        'prefix': prefix,
+        'prefix': account['prefix'],
         'cluster': cluster_name,
         'kms_key_arn': '${aws_kms_key.stream_alert_secrets.arn}',
         'rule_processor_memory': modules['stream_alert']['rule_processor']['memory'],
@@ -157,27 +185,31 @@ def generate_cluster(**kwargs):
         'alert_processor_memory': modules['stream_alert']['alert_processor']['memory'],
         'alert_processor_timeout': modules['stream_alert']['alert_processor']['timeout'],
         'alert_processor_version': modules['stream_alert']['alert_processor']['current_version'],
-        's3_logging_bucket': logging_bucket
+        's3_logging_bucket': '{}.streamalert.s3-logging'.format(
+            config['global']['account']['prefix'])
     }
 
     # Add Alert Processor output config conditionally to the StreamAlert module
     output_config = modules['stream_alert']['alert_processor'].get('outputs')
     if output_config:
-        output_mapping = {'output_lambda_functions': 'aws-lambda', 'output_s3_buckets':'aws-s3'}
+        output_mapping = {
+            'output_lambda_functions': 'aws-lambda',
+            'output_s3_buckets':'aws-s3'
+        }
         for tf_key, output in output_mapping.iteritems():
             if output in output_config:
                 cluster_dict['module']['stream_alert_{}'.format(cluster_name)].update({
                     tf_key: modules['stream_alert']['alert_processor']['outputs'][output]
                 })
 
-    # Add Alert Processor input config conditionally to the StreamAlert module
+    # Add Rule Processor input config conditionally to the StreamAlert module
     input_config = modules['stream_alert']['rule_processor'].get('inputs')
     if input_config:
         cluster_dict['module']['stream_alert_{}'.format(cluster_name)].update({
             'input_sns_topics': input_config['aws-sns']
         })
 
-    # Add the VPC config conditionally to the StreamAlert module
+    # Add the Alert Processor VPC config conditionally to the StreamAlert module
     vpc_config = modules['stream_alert']['alert_processor'].get('vpc_config')
     if vpc_config:
         cluster_dict['module']['stream_alert_{}'.format(cluster_name)].update({
@@ -185,6 +217,22 @@ def generate_cluster(**kwargs):
             'alert_processor_vpc_subnet_ids': vpc_config['subnet_ids'],
             'alert_processor_vpc_security_group_ids': vpc_config['security_group_ids']
         })
+
+
+def generate_cluster(**kwargs):
+    config = kwargs.get('config')
+    cluster_name = kwargs.get('cluster_name')
+    account = config['global']['account']
+    prefix = account['prefix']
+    logging_bucket = '{}.streamalert.s3-logging'.format(
+        config['global']['account']['prefix'])
+    account_id = account['aws_account_id']
+    firehose_suffix = config['clusters'][cluster_name]['modules']['kinesis']['firehose']['s3_bucket_suffix']
+
+    modules = config['clusters'][cluster_name]['modules']
+    cluster_dict = infinitedict()
+
+    generate_stream_alert(cluster_name, cluster_dict, config)
 
     if modules['cloudwatch_monitoring']['enabled']:
         # CloudWatch monitoring module
@@ -261,6 +309,9 @@ def generate_cluster(**kwargs):
                 if input_data:
                     cluster_dict['module']['flow_logs_{}'.format(
                         cluster_name)][input] = input_data
+    
+    # s3_events_info = modules.get('s3_events')
+    # if s3_events_info:
 
     return cluster_dict
 

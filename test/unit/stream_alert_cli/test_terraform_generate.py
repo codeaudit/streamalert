@@ -42,6 +42,22 @@ class TestTerraformGenerate(object):
 
     def setup(self):
         """Setup before each method"""
+        self.base_config = {
+            'global': {
+                'account': {
+                    'prefix': 'unit-testing',
+                    'kms_key_alias': 'unit-testing'
+                },
+                'terraform': {
+                    'tfstate_bucket': 'unit-testing.terraform.tfstate'
+                }
+            },
+            'lambda': {
+                'rule_processor_config': {
+                    'source_bucket': 'unit.testing.source.bucket'
+                }
+            }
+        }
 
     def teardown(self):
         """Teardown after each method"""
@@ -87,22 +103,7 @@ class TestTerraformGenerate(object):
     def test_generate_main(self):
         """CLI - Terraform Generate Main"""
         init = False
-        config = {
-            'global': {
-                'account': {
-                    'prefix': 'unit-testing',
-                    'kms_key_alias': 'unit-testing'
-                },
-                'terraform': {
-                    'tfstate_bucket': 'unit-testing.terraform.tfstate'
-                }
-            },
-            'lambda': {
-                'rule_processor_config': {
-                    'source_bucket': 'unit.testing.source.bucket'
-                }
-            }
-        }
+        config = self.base_config
 
         tf_main = terraform_generate.generate_main(
             config=config,
@@ -130,3 +131,11 @@ class TestTerraformGenerate(object):
         assert_equal(set(tf_main.keys()), main_keys)
         assert_equal(set(tf_main['resource']['aws_s3_bucket'].keys()), main_buckets)
         assert_equal(set(tf_main['resource'].keys()), main_resources)
+
+    def test_generate_stream_alert(self):
+        """CLI - Terraform Generate Stream_Alert Module"""
+        pass
+
+    def test_generate_cluster(self):
+        """CLI - Terraform Generate Cluster"""
+        pass
